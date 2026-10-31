@@ -45,6 +45,7 @@ static const uint8_t Urms = 0x49; // Voltage measurement register address
 static const uint8_t Pmean = 0x4A; // Active power measurement register address
 static const uint8_t Freq = 0x4C; // Frequency measurement register address
 static const uint8_t Pfactor = 0x4D; // Power factor measurement register address
+static const uint8_t APenergy = 0x40; // Active energy measurement register address
 
 
 //Values
@@ -61,7 +62,7 @@ static SPISettings atm90e26spiSettings(200000, MSBFIRST, SPI_MODE3); // 200 kHz,
 bool ATM90E26::begin(){
     pinMode(atm90e26_cs_pin, OUTPUT);
     digitalWrite(atm90e26_cs_pin, HIGH); // Set CS pin high to deselect the device
-    SPI.begin(18,19,23,atm90e26_cs_pin); // Initialize SPI
+    //SPI.begin(18,19,23,atm90e26_cs_pin); // Initialize SPI
     data = {};
     data.valid = false;
 
@@ -168,6 +169,12 @@ if ((status & 0x3000)){
 }
 
 bool ATM90E26::readMeasurement(){
+
+    if(!checkCommunication()){
+        Serial.println("ATM90E26 communication error.");
+        data.valid = false;
+        return false;
+    }
     data.voltage = (float)readRegister(Urms) * 0.01; // Convert to volts
     data.current = (float)readRegister(Irms) * 0.001; // Convert to amperes
     int16_t rawActivePower = (int16_t)readRegister(Pmean);
@@ -183,12 +190,22 @@ bool ATM90E26::readMeasurement(){
         data.powerFactor = (float)rawPowerFactor * 0.001; // Convert to positive power factor
     }
 
+    uint16_t rawEnergy = readRegister(APenergy);
+    const float pulseConstant = 3200.0; // Example pulse constant, adjust as needed
+    float newEnergyKWh= (float)(rawEnergy / (pulseConstant*10)); // Convert to kWh
+    data.energyKWh += newEnergyKWh;
+
     return true;
 
 
 
 }
-    
+
+
+
+MeterData ATM90E26::getMeterData() const {
+    return data;
+}   
 
 
 
@@ -196,6 +213,8 @@ bool ATM90E26::readMeasurement(){
 
 
 uint16_t ATM90E26::readRegister(uint8_t address){
+
+
     SPI.beginTransaction(atm90e26spiSettings);
     digitalWrite(atm90e26_cs_pin, LOW); // Select the device
     SPI.transfer(address | 0x80); // Send read command with address
@@ -209,11 +228,15 @@ uint16_t ATM90E26::readRegister(uint8_t address){
     return value;
 }
 
+bool ATM90E26::checkCommunication(){
+    uint16_t value = readRegister(FuncEn);
+    if(value == 0x0030){
+        return true; // Communication is successful
+    } else {
+        return false; // Communication failed
+    }
 
-
-
-
-
+}   
 
 void ATM90E26::writeRegister(uint8_t address, uint16_t value){
     SPI.beginTransaction(atm90e26spiSettings);

@@ -3,6 +3,9 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Adafruit_NeoPixel.h>
+#include "atm90e26.h"
+
+
 
 
 // =====================================================
@@ -26,8 +29,9 @@ const float R2 = 20000.0;
 const float vdividfactor = (R1 + R2) / R2;
 
 // =====================================================
-// WIFI - SET YOUR LOCAL NETWORK CREDENTIALS
+
 // =====================================================
+
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
@@ -65,6 +69,19 @@ const byte authorizedUIDLength = sizeof(authorizedUID);
 
 // Emergency input uses INPUT_PULLUP:
 // pressed = LOW, released = HIGH.
+
+
+
+// =====================================================
+// Energy Meter ATM90E26
+// =====================================================
+ATM90E26 energyMeter;
+
+unsigned long lastEnergyRead = 0;
+const unsigned long energyReadInterval = 1000; // Read energy data every second
+
+uint8_t begin_flag = 0; // Flag to indicate if the energy meter has been initialized
+
 
 // =====================================================
 // CP STATES - YOUR MEASURED ADC THRESHOLDS
@@ -415,6 +432,40 @@ void updateRelay() {
 }
 
 // =====================================================
+// ENERGY METER READINGS
+// =====================================================
+void readEnergyData() {
+if(begin_flag == 1){
+  if (millis() - lastEnergyRead >= energyReadInterval) {
+    lastEnergyRead = millis();
+    if(energyMeter.readMeasurement()) {
+
+      MeterData meterData = energyMeter.getMeterData();
+      Serial.print("Voltage: ");
+      Serial.print(meterData.voltage);
+      Serial.println(" V");
+      Serial.print("Current: ");
+      Serial.print(meterData.current);
+      Serial.println(" A");
+      Serial.print("Active Power: ");
+      Serial.print(meterData.activePower);
+      Serial.println(" W");
+      Serial.print("Frequency: ");
+      Serial.print(meterData.frequency);
+      Serial.println(" Hz");
+      Serial.print("Power Factor: ");
+      Serial.println(meterData.powerFactor, 3);
+      Serial.print("Energy (kWh): ");
+      Serial.println(meterData.energyKWh, 3);
+    } else {
+      Serial.println("Failed to read energy data from ATM90E26.");
+    }
+   
+  }
+}
+}
+
+// =====================================================
 // SETUP
 // =====================================================
 void setup() {
@@ -427,6 +478,10 @@ void setup() {
 
   pinMode(RELAY, OUTPUT);
   digitalWrite(RELAY, LOW);
+
+  pinMode(RFID_SS_PIN, OUTPUT);
+  digitalWrite(RFID_SS_PIN, HIGH);
+  
 
   // CP PWM: 1 kHz, 10-bit resolution.
   // 1023 means 100% duty, not 10%.
@@ -442,8 +497,20 @@ void setup() {
   strip.setBrightness(30);
   clearLEDs();
 
-  // RC522 SPI
-  SPI.begin(18, 19, 23, RFID_SS_PIN);
+  // SPI for RFID and ATM90E26
+
+  SPI.begin(18, 19, 23);
+
+  //Energy Meter initialization
+    if (!energyMeter.begin()) {
+    Serial.println("Failed to initialize ATM90E26 energy meter.");
+  } else {
+    begin_flag = 1;
+    Serial.println("ATM90E26 energy meter initialized successfully.");
+  }
+
+  //RFID initialization
+  
   rfid.PCD_Init();
 
   // Wi-Fi
@@ -455,6 +522,11 @@ void setup() {
   Serial.println("       EVSE RFID CONTROL");
   Serial.println("================================");
   Serial.println("Connecting to Wi-Fi...");
+
+
+
+
+
 }
 
 // =====================================================
@@ -528,7 +600,7 @@ void loop() {
   float cpPinVoltage =
     analogReadMilliVolts(CP_ADC_PIN) / 1000.0;
 
-  float cpInputVoltage = cpPinVoltage * vdividfactor;
+  //float cpInputVoltage = cpPinVoltage * vdividfactor;
 
   CPState newState = getState(cpADC);
 
@@ -550,6 +622,7 @@ void loop() {
     Serial.println(" V");
 
   
+    readEnergyData();
 
     printCPState(cpState);
   }

@@ -26,6 +26,7 @@ class ATM90E26 {
     MeterData data;
     uint16_t readRegister(uint8_t address);
     void writeRegister(uint8_t address, uint16_t value);
+    bool checkCommunication();
 };
 
 /*float readVoltage();
